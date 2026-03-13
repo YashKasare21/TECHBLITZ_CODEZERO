@@ -55,7 +55,10 @@ export async function findDoctorByName(name: string): Promise<DoctorRecord | nul
   );
 }
 
-export async function findOrCreatePatientByPhone(phone: string) {
+export async function findOrCreatePatientByPhone(
+  phone: string,
+  fullName?: string
+) {
   const normalized = phone.replace(/\D/g, "");
 
   const { data: existing } = await supabase
@@ -68,7 +71,10 @@ export async function findOrCreatePatientByPhone(phone: string) {
 
   const { data: created } = await supabase
     .from("patients")
-    .insert({ full_name: `WhatsApp User (${normalized})`, phone: normalized })
+    .insert({
+      full_name: fullName?.trim() || `WhatsApp User (${normalized})`,
+      phone: normalized,
+    })
     .select()
     .single();
 
@@ -180,4 +186,80 @@ export async function getDoctorsList(): Promise<DoctorRecord[]> {
     .eq("is_active", true);
 
   return (data as unknown as DoctorRecord[]) || [];
+}
+
+export interface PatientAppointment {
+  id: string;
+  appointment_date: string;
+  start_time: string;
+  end_time: string;
+  status: string;
+  doctorName: string;
+  specialization: string;
+}
+
+export async function getPatientAppointments(phone: string): Promise<PatientAppointment[]> {
+  const normalized = phone.replace(/\D/g, "");
+
+  const { data: patient } = await supabase
+    .from("patients")
+    .select("id")
+    .eq("phone", normalized)
+    .single<PatientRecord>();
+
+  if (!patient) return [];
+
+  const today = new Date().toISOString().split("T")[0];
+
+  const { data } = await supabase
+    .from("appointments")
+    .select(`
+      id,
+      appointment_date,
+      start_time,
+      end_time,
+      status,
+      doctors!inner(
+        specialization,
+        profile:profiles(full_name)
+      )
+    `)
+    .eq("patient_id", patient.id)
+    .gte("appointment_date", today)
+    .neq("status", "cancelled")
+    .order("appointment_date", { ascending: true })
+    .order("start_time", { ascending: true })
+    .limit(5);
+
+  if (!data) return [];
+
+  return data.map((row: any) => {
+    const doctorProfile = Array.isArray(row.doctors?.profile)
+      ? row.doctors.profile[0]
+      : row.doctors?.profile;
+    return {
+      id: row.id,
+      appointment_date: row.appointment_date,
+      start_time: row.start_time,
+      end_time: row.end_time,
+      status: row.status,
+      doctorName: doctorProfile?.full_name ?? "Unknown Doctor",
+      specialization: row.doctors?.specialization ?? "",
+    };
+  });
+}
+
+export async function cancelAppointment(
+  appointmentId: string
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase
+    .from("appointments")
+    .update({
+      status: "cancelled",
+      cancelled_at: new Date().toISOString(),
+    })
+    .eq("id", appointmentId);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true };
 }
