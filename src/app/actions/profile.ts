@@ -1,8 +1,8 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createClient } from '../../lib/supabase/server'
-import { ActionResult, Profile } from '../../types'
+import { createClient } from '@/lib/supabase/server'
+import { ActionResult, Profile } from '@/types'
 
 /**
  * Get the current user's profile from the profiles table

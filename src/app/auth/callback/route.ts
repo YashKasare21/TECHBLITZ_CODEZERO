@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 
 /**
  * Auth callback route handler
