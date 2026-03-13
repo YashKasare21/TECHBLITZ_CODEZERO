@@ -22,6 +22,7 @@ import { SlotPicker } from "./slot-picker";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { CircleDashed } from "@phosphor-icons/react";
 import type { Doctor, Patient, TimeSlot } from "@/lib/types";
 
 interface BookingDrawerProps {
@@ -121,7 +122,7 @@ export function BookingDrawer({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="mt-6 space-y-6">
+        <div className="mt-6 space-y-6 px-4 pb-4">
           {/* Doctor */}
           <div className="space-y-2">
             <Label>Doctor</Label>
@@ -235,7 +236,14 @@ export function BookingDrawer({
             }
             className="w-full font-semibold uppercase tracking-wide"
           >
-            {saving ? "Booking..." : "Book Appointment"}
+            {saving ? (
+              <>
+                <CircleDashed className="h-4 w-4 animate-spin" />
+                Booking...
+              </>
+            ) : (
+              "Book Appointment"
+            )}
           </Button>
         </div>
       </SheetContent>

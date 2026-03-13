@@ -27,8 +27,11 @@ import { WeekCalendar } from "@/components/schedule/week-calendar";
 import { useRealtimeAppointments } from "@/hooks/use-realtime";
 import { formatTime } from "@/lib/scheduling";
 import { createClient } from "@/lib/supabase/client";
-import { CalendarPlus, FunnelSimple, List, CalendarBlank, CircleDashed, ArrowsClockwise, UserMinus } from "@phosphor-icons/react";
+import { CalendarPlus, FunnelSimple, List, CalendarBlank, CircleDashed, ArrowsClockwise, UserMinus, CheckCircle, SignOut as SignOutIcon } from "@phosphor-icons/react";
+import { toast } from "sonner";
 import type { Appointment, AppointmentStatus, Doctor } from "@/lib/types";
+
+type CalendarMode = "day" | "week" | "month";
 
 export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -36,12 +39,14 @@ export default function AppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
 
   const [dateFilter, setDateFilter] = useState(
     new Date().toISOString().split("T")[0]
   );
   const [doctorFilter, setDoctorFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [calendarMode, setCalendarMode] = useState<CalendarMode>("week");
 
   const supabase = createClient();
 
@@ -62,12 +67,16 @@ export default function AppointmentsPage() {
 
   const fetchCalendarAppointments = useCallback(
     async (startDate: string, endDate: string) => {
-      const res = await fetch(
-        `/api/appointments?startDate=${startDate}&endDate=${endDate}`
-      );
+      const params = new URLSearchParams();
+      params.set("startDate", startDate);
+      params.set("endDate", endDate);
+      if (doctorFilter !== "all") params.set("doctorId", doctorFilter);
+      if (statusFilter !== "all") params.set("status", statusFilter);
+
+      const res = await fetch(`/api/appointments?${params}`);
       return res.json();
     },
-    []
+    [doctorFilter, statusFilter]
   );
 
   useEffect(() => {
@@ -83,12 +92,22 @@ export default function AppointmentsPage() {
   }, [fetchAppointments]);
 
   async function updateStatus(id: string, status: string) {
-    await fetch("/api/appointments", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status }),
-    });
-    fetchAppointments();
+    setLoadingId(id);
+    try {
+      const res = await fetch("/api/appointments", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to update");
+        return;
+      }
+      await fetchAppointments();
+    } finally {
+      setLoadingId(null);
+    }
   }
 
   return (
@@ -112,7 +131,33 @@ export default function AppointmentsPage() {
         </TabsList>
 
         <TabsContent value="calendar">
-          <WeekCalendar fetchAppointments={fetchCalendarAppointments} />
+          <div className="mb-3 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant={calendarMode === "day" ? "default" : "outline"}
+              onClick={() => setCalendarMode("day")}
+            >
+              Day
+            </Button>
+            <Button
+              size="sm"
+              variant={calendarMode === "week" ? "default" : "outline"}
+              onClick={() => setCalendarMode("week")}
+            >
+              Week
+            </Button>
+            <Button
+              size="sm"
+              variant={calendarMode === "month" ? "default" : "outline"}
+              onClick={() => setCalendarMode("month")}
+            >
+              Month
+            </Button>
+          </div>
+          <WeekCalendar
+            fetchAppointments={fetchCalendarAppointments}
+            mode={calendarMode}
+          />
         </TabsContent>
 
         <TabsContent value="list" className="space-y-4">
@@ -217,12 +262,34 @@ export default function AppointmentsPage() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1.5">
                           {(apt.status === "booked" || apt.status === "pending") && (
-                            <Button size="sm" variant="outline" onClick={() => updateStatus(apt.id, "checked_in")}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={loadingId !== null}
+                              onClick={() => updateStatus(apt.id, "checked_in")}
+                              className="gap-1.5"
+                            >
+                              {loadingId === apt.id ? (
+                                <CircleDashed className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <CheckCircle className="h-3.5 w-3.5" weight="bold" />
+                              )}
                               Check In
                             </Button>
                           )}
                           {apt.status === "checked_in" && (
-                            <Button size="sm" variant="outline" onClick={() => updateStatus(apt.id, "checked_out")}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={loadingId !== null}
+                              onClick={() => updateStatus(apt.id, "checked_out")}
+                              className="gap-1.5"
+                            >
+                              {loadingId === apt.id ? (
+                                <CircleDashed className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <SignOutIcon className="h-3.5 w-3.5" weight="bold" />
+                              )}
                               Check Out
                             </Button>
                           )}
@@ -230,6 +297,7 @@ export default function AppointmentsPage() {
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={loadingId !== null}
                               onClick={() => setRescheduleTarget(apt)}
                               className="gap-1"
                             >
@@ -241,20 +309,30 @@ export default function AppointmentsPage() {
                             <Button
                               size="sm"
                               variant="ghost"
+                              disabled={loadingId !== null}
                               onClick={() => updateStatus(apt.id, "no_show")}
                               className="text-secondary-foreground"
                             >
-                              <UserMinus className="h-4 w-4" />
+                              {loadingId === apt.id ? (
+                                <CircleDashed className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <UserMinus className="h-4 w-4" />
+                              )}
                             </Button>
                           )}
                           {(apt.status === "booked" || apt.status === "pending") && (
                             <Button
                               size="sm"
                               variant="ghost"
+                              disabled={loadingId !== null}
                               onClick={() => updateStatus(apt.id, "cancelled")}
                               className="text-destructive"
                             >
-                              Cancel
+                              {loadingId === apt.id ? (
+                                <CircleDashed className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                "Cancel"
+                              )}
                             </Button>
                           )}
                         </div>

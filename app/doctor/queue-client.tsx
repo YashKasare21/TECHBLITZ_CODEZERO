@@ -16,6 +16,7 @@ import {
   User,
   NoteBlank,
   Queue,
+  CircleDashed,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import type { Appointment, AppointmentStatus } from "@/lib/types";
@@ -196,7 +197,11 @@ function QueueCard({
               disabled={updating}
               className="gap-1.5"
             >
-              <CheckCircle className="h-4 w-4" weight="bold" />
+              {updating ? (
+                <CircleDashed className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4" weight="bold" />
+              )}
               Check In
             </Button>
           )}
@@ -208,7 +213,11 @@ function QueueCard({
               disabled={updating}
               className="gap-1.5"
             >
-              <SignOutIcon className="h-4 w-4" weight="bold" />
+              {updating ? (
+                <CircleDashed className="h-4 w-4 animate-spin" />
+              ) : (
+                <SignOutIcon className="h-4 w-4" weight="bold" />
+              )}
               Check Out
             </Button>
           )}

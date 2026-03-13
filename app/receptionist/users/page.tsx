@@ -94,6 +94,7 @@ export default function UsersPage() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<StaffUser | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<StaffUser | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -123,15 +124,20 @@ export default function UsersPage() {
 
   async function handleDeactivate() {
     if (!deactivateTarget) return;
-    const res = await fetch(`/api/users?id=${deactivateTarget.id}`, { method: "DELETE" });
-    const data = await res.json();
-    if (!res.ok) {
-      toast.error(data.error || "Failed to deactivate user");
-    } else {
-      toast.success(`${deactivateTarget.full_name} has been deactivated`);
-      fetchUsers();
+    setDeactivating(true);
+    try {
+      const res = await fetch(`/api/users?id=${deactivateTarget.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to deactivate user");
+      } else {
+        toast.success(`${deactivateTarget.full_name} has been deactivated`);
+        fetchUsers();
+      }
+    } finally {
+      setDeactivating(false);
+      setDeactivateTarget(null);
     }
-    setDeactivateTarget(null);
   }
 
   return (
@@ -352,12 +358,20 @@ export default function UsersPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deactivating}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDeactivate}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => { e.preventDefault(); handleDeactivate(); }}
+              disabled={deactivating}
+              className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Deactivate
+              {deactivating ? (
+                <>
+                  <CircleDashed className="h-4 w-4 animate-spin" />
+                  Deactivating...
+                </>
+              ) : (
+                "Deactivate"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

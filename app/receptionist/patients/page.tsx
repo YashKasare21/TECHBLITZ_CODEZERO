@@ -313,7 +313,14 @@ function AddPatientDialog({
             disabled={saving}
             className="w-full font-semibold uppercase tracking-wide"
           >
-            {saving ? "Saving..." : "Add Patient"}
+            {saving ? (
+              <>
+                <CircleDashed className="h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              "Add Patient"
+            )}
           </Button>
         </form>
       </DialogContent>

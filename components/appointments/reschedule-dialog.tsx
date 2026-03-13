@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { SlotPicker } from "./slot-picker";
 import { formatTime } from "@/lib/scheduling";
 import { toast } from "sonner";
+import { CircleDashed } from "@phosphor-icons/react";
 import type { Appointment, TimeSlot } from "@/lib/types";
 
 interface RescheduleDialogProps {
@@ -132,7 +133,14 @@ export function RescheduleDialog({
             disabled={saving || !selectedDate || !selectedSlot}
             className="w-full font-semibold uppercase tracking-wide"
           >
-            {saving ? "Rescheduling..." : "Confirm Reschedule"}
+            {saving ? (
+              <>
+                <CircleDashed className="h-4 w-4 animate-spin" />
+                Rescheduling...
+              </>
+            ) : (
+              "Confirm Reschedule"
+            )}
           </Button>
         </div>
       </DialogContent>

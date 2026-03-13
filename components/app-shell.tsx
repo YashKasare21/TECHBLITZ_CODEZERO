@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
+import { useTransition, useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   CalendarBlank,
   ChartBar,
   WhatsappLogo,
+  CircleNotch,
 } from "@phosphor-icons/react";
 import type { Profile } from "@/lib/types";
 
@@ -84,6 +85,19 @@ export function AppShell({
   const supabase = createClient();
   const navItems = profile.role === "doctor" ? doctorNav : receptionistNav;
 
+  const [isPending, startTransition] = useTransition();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isPending) setPendingHref(null);
+  }, [isPending]);
+
+  function handleNav(href: string) {
+    if (href === pathname) return;
+    setPendingHref(href);
+    startTransition(() => router.push(href));
+  }
+
   const initials = profile.full_name
     .split(" ")
     .map((n) => n[0])
@@ -112,15 +126,18 @@ export function AppShell({
             const isActive =
               item.href === pathname ||
               (item.href !== "/" + profile.role && pathname.startsWith(item.href + "/"));
+            const isLoading = pendingHref === item.href;
             return (
-              <Link
+              <button
                 key={item.href}
-                href={item.href}
+                onClick={() => handleNav(item.href)}
+                disabled={isLoading}
                 className={cn(
-                  "group flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150",
+                  "group flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150",
                   isActive
                     ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  isLoading && "opacity-70"
                 )}
               >
                 <span
@@ -131,10 +148,14 @@ export function AppShell({
                       : "text-muted-foreground group-hover:text-foreground"
                   )}
                 >
-                  {item.icon}
+                  {isLoading ? (
+                    <CircleNotch className="h-5 w-5 animate-spin" />
+                  ) : (
+                    item.icon
+                  )}
                 </span>
                 {item.label}
-              </Link>
+              </button>
             );
           })}
         </nav>
