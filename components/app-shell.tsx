@@ -93,15 +93,17 @@ export function AppShell({
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
-      <aside className="flex w-[260px] flex-col border-r border-border bg-card">
-        <div className="flex h-16 items-center gap-2.5 border-b border-border px-6">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-            <Stethoscope className="h-5 w-5 text-primary-foreground" weight="duotone" />
+      <aside className="flex w-[240px] shrink-0 flex-col border-r border-border bg-card">
+        {/* Brand */}
+        <div className="flex h-16 items-center gap-2.5 border-b border-border px-5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+            <Stethoscope className="h-4 w-4 text-primary-foreground" weight="duotone" />
           </div>
-          <span className="text-lg font-semibold tracking-tight">ClinicOS</span>
+          <span className="text-base font-semibold tracking-tight">ClinicOS</span>
         </div>
 
-        <nav className="flex-1 space-y-1 px-3 py-4">
+        {/* Nav */}
+        <nav className="flex-1 space-y-0.5 px-2 py-3">
           {navItems.map((item) => {
             const isActive =
               item.href === pathname ||
@@ -111,39 +113,50 @@ export function AppShell({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  "group flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150",
                   isActive
-                    ? "bg-accent text-accent-foreground"
+                    ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
-                {item.icon}
+                <span
+                  className={cn(
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
+                    isActive
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground group-hover:text-foreground"
+                  )}
+                >
+                  {item.icon}
+                </span>
                 {item.label}
               </Link>
             );
           })}
         </nav>
 
-        <div className="border-t border-border p-3">
-          <div className="flex items-center gap-3 rounded-lg px-3 py-2">
-            <Avatar className="h-8 w-8">
-              <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
+        {/* User */}
+        <div className="border-t border-border p-2">
+          <div className="flex items-center gap-2.5 rounded-md px-2 py-2">
+            <Avatar className="h-7 w-7 shrink-0">
+              <AvatarFallback className="bg-primary/10 text-[10px] font-bold text-primary">
                 {initials}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 overflow-hidden">
-              <p className="truncate text-sm font-medium">{profile.full_name}</p>
-              <p className="truncate text-xs capitalize text-muted-foreground">
+              <p className="truncate text-xs font-semibold leading-tight">{profile.full_name}</p>
+              <p className="truncate text-[10px] capitalize text-muted-foreground">
                 {profile.role}
               </p>
             </div>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 text-muted-foreground"
+              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
               onClick={handleSignOut}
+              title="Sign out"
             >
-              <SignOut className="h-4 w-4" />
+              <SignOut className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>

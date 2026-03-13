@@ -43,3 +43,5 @@ bot/node_modules/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+kivicare-*

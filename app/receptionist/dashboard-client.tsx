@@ -15,8 +15,9 @@ import {
   Clock,
   XCircle,
   CheckCircle,
+  CalendarBlank,
 } from "@phosphor-icons/react";
-import type { Appointment } from "@/lib/types";
+import type { Appointment, AppointmentStatus } from "@/lib/types";
 
 interface Props {
   todayAppointments: Appointment[];
@@ -53,25 +54,25 @@ export function ReceptionistDashboardClient({
       label: "Today's Appointments",
       value: totalToday,
       icon: <CalendarCheck className="h-5 w-5" weight="duotone" />,
-      color: "text-primary",
+      iconClass: "text-primary bg-primary/10",
     },
     {
       label: "Upcoming",
       value: upcoming,
       icon: <Clock className="h-5 w-5" weight="duotone" />,
-      color: "text-warning-foreground",
+      iconClass: "text-warning bg-warning/15",
     },
     {
       label: "Completed",
       value: completed,
       icon: <CheckCircle className="h-5 w-5" weight="duotone" />,
-      color: "text-success",
+      iconClass: "text-success bg-success/15",
     },
     {
       label: "Total Patients",
       value: totalPatients,
       icon: <Users className="h-5 w-5" weight="duotone" />,
-      color: "text-secondary",
+      iconClass: "text-secondary bg-secondary/15",
     },
   ];
 
@@ -102,12 +103,15 @@ export function ReceptionistDashboardClient({
           <Card key={stat.label} className="border-border shadow-sm">
             <CardContent className="flex items-center gap-4 p-5">
               <div
-                className={`flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 ${stat.color}`}
+                className={cn(
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+                  stat.iconClass
+                )}
               >
                 {stat.icon}
               </div>
               <div>
-                <p className="text-2xl font-semibold">{stat.value}</p>
+                <p className="text-2xl font-semibold tabular-nums">{stat.value}</p>
                 <p className="text-xs text-muted-foreground">{stat.label}</p>
               </div>
             </CardContent>
