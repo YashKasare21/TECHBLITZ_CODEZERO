@@ -91,7 +91,7 @@ export async function signIn(formData: FormData): Promise<ActionResult<never>> {
       redirectPath = '/schedule'
       break
     case 'patient':
-      redirectPath = '/appointments'
+      redirectPath = '/patient'
       break
     default:
       redirectPath = '/dashboard'
