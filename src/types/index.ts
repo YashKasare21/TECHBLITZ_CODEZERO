@@ -247,10 +247,19 @@ export interface CreateServiceInput {
 
 /** Booking slot for appointment scheduling */
 export interface BookingSlot {
-  date: Date;
+  date: string; // ISO format YYYY-MM-DD
   startTime: string; // TIME format (HH:MM)
   endTime: string; // TIME format (HH:MM)
   isAvailable: boolean;
+}
+
+/** Input for upserting a doctor session (Phase 6) */
+export interface UpsertDoctorSession {
+  doctor_id: string;
+  day_of_week: DayOfWeek;
+  start_time: string;
+  end_time: string;
+  is_available: boolean;
 }
 
 // ============================================
