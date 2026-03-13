@@ -20,6 +20,11 @@ const statusColors: Record<AppointmentStatus, string> = {
 
 interface WeekCalendarProps {
   fetchAppointments: (startDate: string, endDate: string) => Promise<Appointment[]>;
+  mode?: "day" | "week" | "month";
+}
+
+function dateToString(date: Date) {
+  return date.toISOString().split("T")[0];
 }
 
 function getWeekDates(baseDate: Date) {
@@ -35,22 +40,78 @@ function getWeekDates(baseDate: Date) {
   return dates;
 }
 
-export function WeekCalendar({ fetchAppointments }: WeekCalendarProps) {
+function getMonthRange(baseDate: Date) {
+  const start = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+  const end = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
+  return { start, end };
+}
+
+function getMonthGridDates(baseDate: Date) {
+  const { start, end } = getMonthRange(baseDate);
+  const gridStart = new Date(start);
+  gridStart.setDate(start.getDate() - start.getDay());
+
+  const gridEnd = new Date(end);
+  gridEnd.setDate(end.getDate() + (6 - end.getDay()));
+
+  const dates: Date[] = [];
+  const cursor = new Date(gridStart);
+  while (cursor <= gridEnd) {
+    dates.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return dates;
+}
+
+function getModeRange(baseDate: Date, mode: "day" | "week" | "month") {
+  if (mode === "day") {
+    const day = new Date(baseDate);
+    return { start: day, end: day };
+  }
+
+  if (mode === "month") {
+    return getMonthRange(baseDate);
+  }
+
+  const weekDates = getWeekDates(baseDate);
+  return { start: weekDates[0], end: weekDates[6] };
+}
+
+export function WeekCalendar({ fetchAppointments, mode = "week" }: WeekCalendarProps) {
   const [baseDate, setBaseDate] = useState(new Date());
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
 
   const weekDates = getWeekDates(baseDate);
-  const startStr = weekDates[0].toISOString().split("T")[0];
-  const endStr = weekDates[6].toISOString().split("T")[0];
-  const todayStr = new Date().toISOString().split("T")[0];
+  const monthDates = getMonthGridDates(baseDate);
+  const { start, end } = getModeRange(baseDate, mode);
+  const startStr = dateToString(start);
+  const endStr = dateToString(end);
+  const todayStr = dateToString(new Date());
 
   useEffect(() => {
-    setLoading(true);
-    fetchAppointments(startStr, endStr).then((data) => {
-      setAppointments(data);
-      setLoading(false);
-    });
+    let cancelled = false;
+
+    const loadAppointments = async () => {
+      setLoading(true);
+      try {
+        const data = await fetchAppointments(startStr, endStr);
+        if (!cancelled) {
+          setAppointments(data);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadAppointments();
+
+    return () => {
+      cancelled = true;
+    };
   }, [startStr, endStr, fetchAppointments]);
 
   function shiftWeek(dir: number) {
@@ -59,12 +120,75 @@ export function WeekCalendar({ fetchAppointments }: WeekCalendarProps) {
     setBaseDate(d);
   }
 
+  function shiftDay(dir: number) {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() + dir);
+    setBaseDate(d);
+  }
+
+  function shiftMonth(dir: number) {
+    const d = new Date(baseDate);
+    d.setMonth(d.getMonth() + dir);
+    setBaseDate(d);
+  }
+
+  function shiftDate(dir: number) {
+    if (mode === "day") {
+      shiftDay(dir);
+      return;
+    }
+
+    if (mode === "month") {
+      shiftMonth(dir);
+      return;
+    }
+
+    shiftWeek(dir);
+  }
+
+  const title =
+    mode === "day"
+      ? "Day View"
+      : mode === "month"
+        ? "Month View"
+        : "Week View";
+
+  const rangeLabel =
+    mode === "day"
+      ? baseDate.toLocaleDateString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })
+      : mode === "month"
+        ? baseDate.toLocaleDateString("en-US", {
+            month: "long",
+            year: "numeric",
+          })
+        : `${weekDates[0].toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          })} - ${weekDates[6].toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}`;
+
+  const dayDateStr = dateToString(baseDate);
+  const dayAppointments = appointments.filter(
+    (a) => a.appointment_date === dayDateStr
+  );
+
   return (
     <Card className="border-border shadow-sm">
       <CardHeader className="flex-row items-center justify-between pb-3">
-        <CardTitle className="text-lg">Week View</CardTitle>
+        <div>
+          <CardTitle className="text-lg">{title}</CardTitle>
+          <p className="text-sm text-muted-foreground">{rangeLabel}</p>
+        </div>
         <div className="flex items-center gap-2">
-          <Button size="icon" variant="outline" onClick={() => shiftWeek(-1)}>
+          <Button size="icon" variant="outline" onClick={() => shiftDate(-1)}>
             <CaretLeft className="h-4 w-4" />
           </Button>
           <Button
@@ -74,7 +198,7 @@ export function WeekCalendar({ fetchAppointments }: WeekCalendarProps) {
           >
             Today
           </Button>
-          <Button size="icon" variant="outline" onClick={() => shiftWeek(1)}>
+          <Button size="icon" variant="outline" onClick={() => shiftDate(1)}>
             <CaretRight className="h-4 w-4" />
           </Button>
         </div>
@@ -84,10 +208,93 @@ export function WeekCalendar({ fetchAppointments }: WeekCalendarProps) {
           <p className="py-8 text-center text-sm text-muted-foreground">
             Loading...
           </p>
+        ) : mode === "day" ? (
+          <div className="space-y-2">
+            {dayAppointments.map((apt) => (
+              <div
+                key={apt.id}
+                className={cn(
+                  "rounded-md border-l-2 px-3 py-2",
+                  statusColors[apt.status]
+                )}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium">
+                    {formatTime(apt.start_time)}
+                    <span className="text-muted-foreground"> - {formatTime(apt.end_time)}</span>
+                  </p>
+                  <StatusBadge status={apt.status} />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {apt.patient?.full_name || "Unknown patient"}
+                </p>
+              </div>
+            ))}
+            {dayAppointments.length === 0 && (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No appointments for this day.
+              </p>
+            )}
+          </div>
+        ) : mode === "month" ? (
+          <div className="grid grid-cols-7 gap-2">
+            {monthDates.map((date) => {
+              const dateStr = dateToString(date);
+              const isToday = dateStr === todayStr;
+              const isCurrentMonth = date.getMonth() === baseDate.getMonth();
+              const dayApts = appointments.filter(
+                (a) => a.appointment_date === dateStr
+              );
+
+              return (
+                <div
+                  key={dateStr}
+                  className={cn(
+                    "min-h-[110px] rounded-md border p-2",
+                    isCurrentMonth ? "bg-background" : "bg-muted/40"
+                  )}
+                >
+                  <div className="mb-2 flex items-center justify-between">
+                    <span
+                      className={cn(
+                        "text-xs font-semibold",
+                        isCurrentMonth ? "text-foreground" : "text-muted-foreground"
+                      )}
+                    >
+                      {date.getDate()}
+                    </span>
+                    {isToday && (
+                      <span className="rounded bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground">
+                        Today
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    {dayApts.slice(0, 2).map((apt) => (
+                      <div
+                        key={apt.id}
+                        className={cn(
+                          "truncate rounded border-l-2 px-1.5 py-1 text-[10px]",
+                          statusColors[apt.status]
+                        )}
+                      >
+                        {formatTime(apt.start_time)} {apt.patient?.full_name}
+                      </div>
+                    ))}
+                    {dayApts.length > 2 && (
+                      <p className="text-[10px] text-muted-foreground">
+                        +{dayApts.length - 2} more
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div className="grid grid-cols-7 gap-2">
             {weekDates.map((date) => {
-              const dateStr = date.toISOString().split("T")[0];
+              const dateStr = dateToString(date);
               const dayAppointments = appointments.filter(
                 (a) => a.appointment_date === dateStr
               );

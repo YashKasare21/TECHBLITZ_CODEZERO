@@ -5,7 +5,15 @@ export async function GET() {
   try {
     const threads = await listWhatsAppThreads();
     return NextResponse.json(threads);
-  } catch {
-    return NextResponse.json([]);
+  } catch (error: unknown) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to load WhatsApp threads",
+      },
+      { status: 500 }
+    );
   }
 }

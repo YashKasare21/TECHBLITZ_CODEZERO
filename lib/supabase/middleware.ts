@@ -43,8 +43,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && pathname === "/login") {
-    // Fetch role from profiles
+  if (user && (pathname === "/login" || pathname === "/")) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
@@ -52,22 +51,44 @@ export async function updateSession(request: NextRequest) {
       .single();
 
     const url = request.nextUrl.clone();
-    url.pathname =
-      profile?.role === "doctor" ? "/doctor" : "/receptionist";
+    if (profile?.role === "doctor") {
+      url.pathname = "/doctor";
+    } else if (profile?.role === "receptionist") {
+      url.pathname = "/receptionist";
+    } else {
+      url.pathname = "/login";
+      // Sign out patients/unknown roles to prevent redirect loops
+      await supabase.auth.signOut();
+    }
     return NextResponse.redirect(url);
   }
 
-  if (user && pathname === "/") {
+  // Prevent patients from accessing staff-only routes
+  if (user && (pathname.startsWith("/receptionist") || pathname.startsWith("/doctor"))) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
 
-    const url = request.nextUrl.clone();
-    url.pathname =
-      profile?.role === "doctor" ? "/doctor" : "/receptionist";
-    return NextResponse.redirect(url);
+    if (profile?.role === "patient" || !profile) {
+      await supabase.auth.signOut();
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
+    }
+
+    if (profile.role === "doctor" && pathname.startsWith("/receptionist")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/doctor";
+      return NextResponse.redirect(url);
+    }
+
+    if (profile.role === "receptionist" && pathname.startsWith("/doctor")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/receptionist";
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;

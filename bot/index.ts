@@ -1,17 +1,19 @@
 import {
+  createEventStream,
   connectWhatsApp,
-  getQRCode,
   getConnectionStatus,
-  getMessageLog,
+  getQRCode,
   sendMessage,
 } from "./whatsapp";
+import { normalizePhone } from "../lib/whatsapp";
 
 const PORT = parseInt(process.env.BOT_PORT || "3001");
 
 connectWhatsApp().catch(console.error);
 
-const server = Bun.serve({
+Bun.serve({
   port: PORT,
+  idleTimeout: 60,
   async fetch(req) {
     const url = new URL(req.url);
 
@@ -37,50 +39,32 @@ const server = Bun.serve({
       );
     }
 
-    if (url.pathname === "/messages") {
-      return new Response(JSON.stringify(getMessageLog()), { headers });
-    }
-
     if (url.pathname === "/send" && req.method === "POST") {
       try {
         const { phoneNumber, message } = await req.json();
-        const jid = phoneNumber.replace(/\D/g, "") + "@s.whatsapp.net";
+        const phone = normalizePhone(phoneNumber);
+        const jid = `${phone}@s.whatsapp.net`;
         await sendMessage(jid, message);
         return new Response(JSON.stringify({ success: true }), { headers });
-      } catch (error: any) {
+      } catch (error: unknown) {
         return new Response(
-          JSON.stringify({ error: error.message }),
+          JSON.stringify({
+            error: error instanceof Error ? error.message : "Failed to send message",
+          }),
           { status: 500, headers }
         );
       }
     }
 
-    // SSE endpoint for QR code streaming
-    if (url.pathname === "/qr-stream") {
-      const stream = new ReadableStream({
-        start(controller) {
-          const encoder = new TextEncoder();
-          const interval = setInterval(() => {
-            const data = JSON.stringify({
-              status: getConnectionStatus(),
-              qr: getQRCode(),
-            });
-            controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-          }, 2000);
-
-          req.signal.addEventListener("abort", () => {
-            clearInterval(interval);
-            controller.close();
-          });
-        },
-      });
-
-      return new Response(stream, {
+    if (url.pathname === "/events") {
+      return new Response(createEventStream(req.signal), {
         headers: {
-          ...headers,
           "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
+          "Cache-Control": "no-cache, no-transform",
           Connection: "keep-alive",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
         },
       });
     }

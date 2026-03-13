@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/appointments/status-badge";
 import { BookingDrawer } from "@/components/appointments/booking-drawer";
 import { useRealtimeAppointments } from "@/hooks/use-realtime";
 import { formatTime } from "@/lib/scheduling";
+import { cn } from "@/lib/utils";
 import {
   CalendarPlus,
   Users,
@@ -15,8 +16,10 @@ import {
   Clock,
   XCircle,
   CheckCircle,
+  CalendarBlank,
+  UserMinus,
 } from "@phosphor-icons/react";
-import type { Appointment } from "@/lib/types";
+import type { Appointment, AppointmentStatus } from "@/lib/types";
 
 interface Props {
   todayAppointments: Appointment[];
@@ -53,25 +56,25 @@ export function ReceptionistDashboardClient({
       label: "Today's Appointments",
       value: totalToday,
       icon: <CalendarCheck className="h-5 w-5" weight="duotone" />,
-      color: "text-primary",
+      iconClass: "text-primary bg-primary/10",
     },
     {
       label: "Upcoming",
       value: upcoming,
       icon: <Clock className="h-5 w-5" weight="duotone" />,
-      color: "text-warning-foreground",
+      iconClass: "text-warning bg-warning/15",
     },
     {
       label: "Completed",
       value: completed,
       icon: <CheckCircle className="h-5 w-5" weight="duotone" />,
-      color: "text-success",
+      iconClass: "text-success bg-success/15",
     },
     {
       label: "Total Patients",
       value: totalPatients,
       icon: <Users className="h-5 w-5" weight="duotone" />,
-      color: "text-secondary",
+      iconClass: "text-secondary bg-secondary/15",
     },
   ];
 
@@ -102,12 +105,15 @@ export function ReceptionistDashboardClient({
           <Card key={stat.label} className="border-border shadow-sm">
             <CardContent className="flex items-center gap-4 p-5">
               <div
-                className={`flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 ${stat.color}`}
+                className={cn(
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+                  stat.iconClass
+                )}
               >
                 {stat.icon}
               </div>
               <div>
-                <p className="text-2xl font-semibold">{stat.value}</p>
+                <p className="text-2xl font-semibold tabular-nums">{stat.value}</p>
                 <p className="text-xs text-muted-foreground">{stat.label}</p>
               </div>
             </CardContent>
@@ -122,9 +128,11 @@ export function ReceptionistDashboardClient({
         </CardHeader>
         <CardContent>
           {todayAppointments.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No appointments scheduled for today
-            </p>
+            <div className="flex flex-col items-center gap-2 py-12 text-center">
+              <CalendarBlank className="h-10 w-10 text-muted-foreground/40" weight="duotone" />
+              <p className="text-sm font-medium text-muted-foreground">No appointments today</p>
+              <p className="text-xs text-muted-foreground/60">Book an appointment to get started</p>
+            </div>
           ) : (
             <div className="space-y-2">
               {todayAppointments.map((apt) => (
@@ -171,8 +179,23 @@ function AppointmentRow({
     (appointment.doctor as unknown as { profile: { full_name: string } })?.profile?.full_name || "Unknown";
   const patientName = appointment.patient?.full_name || "Unknown";
 
+  const statusBorder: Record<AppointmentStatus, string> = {
+    pending: "border-l-warning",
+    booked: "border-l-primary",
+    checked_in: "border-l-success",
+    checked_out: "border-l-border",
+    cancelled: "border-l-destructive",
+    no_show: "border-l-secondary",
+  };
+
   return (
-    <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/30">
+    <div
+      className={cn(
+        "flex items-center gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-muted/30",
+        "border-l-[3px]",
+        statusBorder[appointment.status]
+      )}
+    >
       {/* Time */}
       <div className="w-28 shrink-0 text-center">
         <p className="text-sm font-semibold">{formatTime(appointment.start_time)}</p>
@@ -194,7 +217,7 @@ function AppointmentRow({
 
       {/* Actions */}
       <div className="flex gap-1.5">
-        {appointment.status === "booked" && (
+        {(appointment.status === "booked" || appointment.status === "pending") && (
           <Button
             size="sm"
             variant="outline"
@@ -213,6 +236,17 @@ function AppointmentRow({
             disabled={updating}
           >
             Check Out
+          </Button>
+        )}
+        {(appointment.status === "booked" || appointment.status === "pending") && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => updateStatus("no_show")}
+            disabled={updating}
+            title="No Show"
+          >
+            <UserMinus className="h-4 w-4" />
           </Button>
         )}
         {(appointment.status === "booked" || appointment.status === "pending") && (

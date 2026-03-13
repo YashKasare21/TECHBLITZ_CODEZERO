@@ -27,9 +27,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import { UserPlus, MagnifyingGlass } from "@phosphor-icons/react";
+import { UserPlus, MagnifyingGlass, Users, CircleDashed, Trash } from "@phosphor-icons/react";
 import type { Patient } from "@/lib/types";
 
 export default function PatientsPage() {
@@ -37,6 +47,8 @@ export default function PatientsPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Patient | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const supabase = createClient();
 
   async function fetchPatients() {
@@ -61,6 +73,39 @@ export default function PatientsPage() {
       (p.phone && p.phone.includes(search)) ||
       (p.email && p.email.toLowerCase().includes(search.toLowerCase()))
   );
+
+  async function handleDeletePatient() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("patients")
+        .delete()
+        .eq("id", deleteTarget.id);
+
+      if (error) {
+        const message = error.message.toLowerCase();
+
+        if (
+          error.code === "23503" ||
+          message.includes("foreign key") ||
+          message.includes("violates foreign key constraint")
+        ) {
+          toast.error("Cannot delete this patient because they have appointment history");
+        } else {
+          toast.error(error.message);
+        }
+
+        return;
+      }
+
+      toast.success("Patient deleted successfully");
+      await fetchPatients();
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -95,19 +140,29 @@ export default function PatientsPage() {
                 <TableHead>Gender</TableHead>
                 <TableHead>Blood Group</TableHead>
                 <TableHead>Registered</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                    Loading...
+                  <TableCell colSpan={8} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <CircleDashed className="h-6 w-6 animate-spin" />
+                      <span className="text-sm">Loading patients…</span>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                    No patients found
+                  <TableCell colSpan={8} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <Users className="h-10 w-10 opacity-30" weight="duotone" />
+                      <p className="text-sm font-medium">No patients found</p>
+                      <p className="text-xs opacity-60">
+                        {search ? "Try a different search term" : "Add your first patient to get started"}
+                      </p>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -124,6 +179,17 @@ export default function PatientsPage() {
                     <TableCell className="text-muted-foreground">
                       {new Date(p.created_at).toLocaleDateString()}
                     </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="gap-1 text-destructive hover:bg-destructive/10"
+                        onClick={() => setDeleteTarget(p)}
+                      >
+                        <Trash className="h-3.5 w-3.5" />
+                        Delete
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -137,6 +203,43 @@ export default function PatientsPage() {
         onOpenChange={setDialogOpen}
         onCreated={fetchPatients}
       />
+
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteTarget?.full_name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the patient record if it has no linked appointments.
+              Patients with appointment history cannot be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleDeletePatient();
+              }}
+              disabled={deleting}
+              className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? (
+                <>
+                  <CircleDashed className="h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -304,7 +407,14 @@ function AddPatientDialog({
             disabled={saving}
             className="w-full font-semibold uppercase tracking-wide"
           >
-            {saving ? "Saving..." : "Add Patient"}
+            {saving ? (
+              <>
+                <CircleDashed className="h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              "Add Patient"
+            )}
           </Button>
         </form>
       </DialogContent>
