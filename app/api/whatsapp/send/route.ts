@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
-  } catch (error: any) {
+  } catch {
     return NextResponse.json(
       { error: "Bot server unreachable" },
       { status: 503 }

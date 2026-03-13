@@ -77,7 +77,7 @@ isProject: false
 - Derived state: `conversations` (grouped & sorted), `patientMap` (phone → Patient), `activeMessages`
 - Full two-panel layout with left sidebar tabs and right chat window
 
-`**[bot/whatsapp.ts](bot/whatsapp.ts)**` — minor change
+`**[bot/whatsapp.ts](bot/whatsapp.ts)`** — minor change
 
 - Increase in-memory message log cap from `slice(-50)` to `slice(-300)` so the chat UI has useful history
 

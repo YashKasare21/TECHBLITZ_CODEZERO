@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -8,88 +8,146 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import type { Patient } from "@/lib/types";
+import {
+  normalizePhone,
+  type WhatsAppEventPayload,
+  type WhatsAppMessage,
+  type WhatsAppStatusPayload,
+  type WhatsAppThread,
+} from "@/lib/whatsapp";
 import { cn } from "@/lib/utils";
 import {
-  WhatsappLogo,
-  PaperPlaneTilt,
   ArrowClockwise,
-  CircleDashed,
-  CheckCircle,
-  XCircle,
-  MagnifyingGlass,
   ChatCircle,
-  Users,
+  CheckCircle,
+  CircleDashed,
+  MagnifyingGlass,
+  PaperPlaneTilt,
   Phone,
+  Users,
+  WhatsappLogo,
+  XCircle,
 } from "@phosphor-icons/react";
 
-interface BotMessage {
-  jid: string;
-  direction: "in" | "out";
-  text: string;
-  timestamp: number;
-}
+function formatSidebarTime(value: string | null): string {
+  if (!value) return "";
 
-interface Conversation {
-  jid: string;
-  phone: string;
-  patient: Patient | null;
-  messages: BotMessage[];
-  lastMessage: BotMessage | null;
-}
-
-function normalizePhone(phone: string): string {
-  return phone.replace(/\D/g, "");
-}
-
-function jidToPhone(jid: string): string {
-  return jid.replace(/@s\.whatsapp\.net$/, "").replace(/@lid$/, "");
-}
-
-function phoneToJid(phone: string): string {
-  return `${normalizePhone(phone)}@s.whatsapp.net`;
-}
-
-function formatTime(timestamp: number): string {
-  const date = new Date(timestamp);
+  const date = new Date(value);
   const now = new Date();
+
   if (date.toDateString() === now.toDateString()) {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
+
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+function formatMessageDate(value: string): string {
+  return new Date(value).toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export default function WhatsAppAdminPage() {
-  const [status, setStatus] = useState<"disconnected" | "connecting" | "connected">("disconnected");
+  const supabase = useMemo(() => createClient(), []);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const selectedPhoneRef = useRef<string | null>(null);
+
+  const [status, setStatus] = useState<WhatsAppStatusPayload["status"]>("disconnected");
   const [qr, setQr] = useState<string | null>(null);
-  const [messages, setMessages] = useState<BotMessage[]>([]);
+  const [threads, setThreads] = useState<WhatsAppThread[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [selectedJid, setSelectedJid] = useState<string | null>(null);
+  const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
+  const [activeMessages, setActiveMessages] = useState<WhatsAppMessage[]>([]);
+  const [loadingThreads, setLoadingThreads] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [leftTab, setLeftTab] = useState<"chats" | "people">("chats");
+  const [search, setSearch] = useState("");
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
-  const [search, setSearch] = useState("");
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const supabase = createClient();
+  useEffect(() => {
+    selectedPhoneRef.current = selectedPhone;
+  }, [selectedPhone]);
+
+  const patientByPhone = useMemo(() => {
+    const map = new Map<string, Patient>();
+    for (const patient of patients) {
+      const phone = normalizePhone(patient.phone);
+      if (phone) {
+        map.set(phone, patient);
+      }
+    }
+    return map;
+  }, [patients]);
+
+  const activeThread = selectedPhone
+    ? threads.find((thread) => thread.phone === selectedPhone) ?? null
+    : null;
+  const activePatient = selectedPhone ? patientByPhone.get(selectedPhone) ?? null : null;
+  const activeDisplayName =
+    activeThread?.patient?.full_name ??
+    activePatient?.full_name ??
+    activeThread?.pushName ??
+    (selectedPhone ? `+${selectedPhone}` : null);
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/whatsapp/status");
-      const data = await res.json();
+      const response = await fetch("/api/whatsapp/status", { cache: "no-store" });
+      const data = (await response.json()) as WhatsAppStatusPayload;
       setStatus(data.status);
       setQr(data.qr);
     } catch {
       setStatus("disconnected");
+      setQr(null);
     }
   }, []);
 
-  const fetchMessages = useCallback(async () => {
+  const fetchMessagesForThread = useCallback(async (threadId: string | null) => {
+    if (!threadId) {
+      setActiveMessages([]);
+      return;
+    }
+
+    setLoadingMessages(true);
     try {
-      const res = await fetch("/api/whatsapp/messages");
-      const data = await res.json();
-      setMessages(data);
-    } catch {}
+      const response = await fetch(`/api/whatsapp/threads/${threadId}/messages`, {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as WhatsAppMessage[];
+      setActiveMessages(Array.isArray(data) ? data : []);
+    } catch {
+      toast.error("Failed to load chat history");
+    } finally {
+      setLoadingMessages(false);
+    }
   }, []);
+
+  const refreshThreads = useCallback(async (targetPhone?: string | null) => {
+    const activePhone = targetPhone ?? selectedPhoneRef.current;
+
+    setLoadingThreads(true);
+    try {
+      const response = await fetch("/api/whatsapp/threads", { cache: "no-store" });
+      const data = (await response.json()) as WhatsAppThread[];
+      const nextThreads = Array.isArray(data) ? data : [];
+
+      setThreads(nextThreads);
+
+      if (!activePhone) {
+        return;
+      }
+
+      const nextActiveThread = nextThreads.find((thread) => thread.phone === activePhone) ?? null;
+      await fetchMessagesForThread(nextActiveThread?.id ?? null);
+    } catch {
+      toast.error("Failed to load WhatsApp threads");
+    } finally {
+      setLoadingThreads(false);
+    }
+  }, [fetchMessagesForThread]);
 
   useEffect(() => {
     supabase
@@ -98,94 +156,74 @@ export default function WhatsAppAdminPage() {
       .order("full_name")
       .limit(500)
       .then(({ data }) => setPatients(data || []));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
-    const interval = setInterval(fetchStatus, 3000);
-    fetchStatus();
-    return () => clearInterval(interval);
-  }, [fetchStatus]);
+    void fetchStatus();
+    void refreshThreads();
+  }, [fetchStatus, refreshThreads]);
 
   useEffect(() => {
-    // Poll faster when a chat is open so new messages appear quickly.
-    const interval = setInterval(fetchMessages, selectedJid ? 2000 : 5000);
-    fetchMessages();
-    return () => clearInterval(interval);
-  }, [fetchMessages, selectedJid]);
+    if (!activeThread?.id) {
+      setActiveMessages([]);
+      return;
+    }
+
+    void fetchMessagesForThread(activeThread.id);
+  }, [activeThread?.id, fetchMessagesForThread]);
+
+  useEffect(() => {
+    const eventSource = new EventSource("/api/whatsapp/events");
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as WhatsAppEventPayload;
+
+        if (payload.type === "status") {
+          setStatus(payload.status ?? "disconnected");
+          setQr(payload.qr ?? null);
+          return;
+        }
+
+        if (payload.type === "thread_changed") {
+          void refreshThreads(payload.phone ?? selectedPhoneRef.current);
+        }
+      } catch {
+        // Ignore malformed events and keep the stream alive.
+      }
+    };
+
+    eventSource.onerror = () => {
+      void fetchStatus();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [fetchStatus, refreshThreads]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [selectedJid, messages]);
-
-  // Build patient lookup by normalized phone
-  const patientByPhone = new Map<string, Patient>();
-  for (const p of patients) {
-    if (p.phone) {
-      patientByPhone.set(normalizePhone(p.phone), p);
-    }
-  }
-
-  // Group messages into conversations keyed by normalized phone number.
-  // This merges any messages that arrive under @lid vs @s.whatsapp.net for
-  // the same contact (can happen before the bot's contacts map is built).
-  const conversationMap = new Map<string, BotMessage[]>();
-  // Also track the canonical JID seen for each phone number (prefer @s.whatsapp.net).
-  const phoneToCanonicalJid = new Map<string, string>();
-
-  for (const msg of messages) {
-    const phone = normalizePhone(jidToPhone(msg.jid));
-    const existing = conversationMap.get(phone) ?? [];
-    existing.push(msg);
-    conversationMap.set(phone, existing);
-    // Prefer @s.whatsapp.net as the canonical JID; fall back to whatever we have.
-    const current = phoneToCanonicalJid.get(phone);
-    if (!current || msg.jid.endsWith("@s.whatsapp.net")) {
-      phoneToCanonicalJid.set(phone, msg.jid);
-    }
-  }
-
-  const conversations: Conversation[] = Array.from(conversationMap.entries())
-    .map(([phone, msgs]) => {
-      const jid = phoneToCanonicalJid.get(phone) ?? `${phone}@s.whatsapp.net`;
-      const patient = patientByPhone.get(phone) ?? null;
-      const sorted = [...msgs].sort((a, b) => a.timestamp - b.timestamp);
-      return { jid, phone, patient, messages: sorted, lastMessage: sorted[sorted.length - 1] ?? null };
-    })
-    .sort((a, b) => (b.lastMessage?.timestamp ?? 0) - (a.lastMessage?.timestamp ?? 0));
-
-  // Add stub entries for patients who have a phone number but no messages in the log
-  const phonesWithMessages = new Set(conversations.map((c) => normalizePhone(c.phone)));
-  for (const p of patients) {
-    if (!p.phone) continue;
-    const phone = normalizePhone(p.phone);
-    if (!phonesWithMessages.has(phone)) {
-      conversations.push({
-        jid: phoneToJid(p.phone),
-        phone,
-        patient: p,
-        messages: [],
-        lastMessage: null,
-      });
-    }
-  }
+  }, [activeMessages, selectedPhone]);
 
   const searchLower = search.toLowerCase();
-
-  const filteredConversations = conversations.filter((c) => {
+  const filteredThreads = threads.filter((thread) => {
     if (!search) return true;
+
     return (
-      c.phone.includes(search) ||
-      (c.patient?.full_name.toLowerCase().includes(searchLower) ?? false)
+      thread.phone.includes(search) ||
+      (thread.patient?.full_name.toLowerCase().includes(searchLower) ?? false) ||
+      (thread.pushName?.toLowerCase().includes(searchLower) ?? false)
     );
   });
 
   const filteredPatients = [...patients]
-    .filter((p) => {
+    .filter((patient) => {
       if (!search) return true;
+
       return (
-        p.full_name.toLowerCase().includes(searchLower) ||
-        (p.phone?.includes(search) ?? false)
+        patient.full_name.toLowerCase().includes(searchLower) ||
+        (patient.phone?.includes(search) ?? false)
       );
     })
     .sort((a, b) => {
@@ -194,37 +232,32 @@ export default function WhatsAppAdminPage() {
       return a.full_name.localeCompare(b.full_name);
     });
 
-  const activeMessages = selectedJid
-    ? [...(conversationMap.get(normalizePhone(jidToPhone(selectedJid))) ?? [])].sort(
-        (a, b) => a.timestamp - b.timestamp
-      )
-    : [];
+  async function handleSend(event?: React.FormEvent) {
+    event?.preventDefault();
 
-  const activeConversation = selectedJid
-    ? conversations.find((c) => c.jid === selectedJid) ?? null
-    : null;
+    if (!inputText.trim() || !selectedPhone || status !== "connected") {
+      return;
+    }
 
-  async function handleSend(e?: React.FormEvent) {
-    e?.preventDefault();
-    if (!inputText.trim() || !selectedJid || status !== "connected") return;
     const text = inputText.trim();
     setSending(true);
     setInputText("");
+
     try {
-      const res = await fetch("/api/whatsapp/send", {
+      const response = await fetch("/api/whatsapp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber: jidToPhone(selectedJid), message: text }),
+        body: JSON.stringify({ phoneNumber: selectedPhone, message: text }),
       });
-      if (res.ok) {
-        setTimeout(fetchMessages, 1000);
-      } else {
-        const data = await res.json();
-        toast.error(data.error ?? "Failed to send");
-        setInputText(text);
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error ?? "Failed to send message");
       }
-    } catch {
-      toast.error("Network error");
+
+      void refreshThreads(selectedPhone);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to send message");
       setInputText(text);
     } finally {
       setSending(false);
@@ -232,8 +265,10 @@ export default function WhatsAppAdminPage() {
   }
 
   function openChatForPatient(patient: Patient) {
-    if (!patient.phone) return;
-    setSelectedJid(phoneToJid(patient.phone));
+    const phone = normalizePhone(patient.phone);
+    if (!phone) return;
+
+    setSelectedPhone(phone);
     setLeftTab("chats");
     setSearch("");
   }
@@ -246,7 +281,7 @@ export default function WhatsAppAdminPage() {
     },
     connecting: {
       icon: <CircleDashed className="h-3.5 w-3.5 animate-spin" />,
-      label: "Scanning QR…",
+      label: "Connecting",
       variant: "secondary" as const,
     },
     connected: {
@@ -260,13 +295,14 @@ export default function WhatsAppAdminPage() {
 
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col gap-4">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <WhatsappLogo className="h-6 w-6 text-[#25D366]" weight="duotone" />
           <div>
             <h1 className="text-2xl font-semibold">WhatsApp</h1>
-            <p className="text-sm text-muted-foreground">Clinic messaging &amp; booking assistant</p>
+            <p className="text-sm text-muted-foreground">
+              Live inbox for receptionist and booking assistant traffic
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -274,13 +310,20 @@ export default function WhatsAppAdminPage() {
             {sc.icon}
             {sc.label}
           </Badge>
-          <Button size="icon" variant="ghost" onClick={fetchStatus} className="h-8 w-8">
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => {
+              void fetchStatus();
+              void refreshThreads();
+            }}
+            className="h-8 w-8"
+          >
             <ArrowClockwise className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
-      {/* QR / Offline Banner */}
       {status !== "connected" && (
         <div className="rounded-lg border border-border bg-accent/50 px-4 py-3">
           {status === "connecting" && qr ? (
@@ -293,7 +336,9 @@ export default function WhatsAppAdminPage() {
                 <p className="text-xs text-muted-foreground">
                   Open WhatsApp on your phone → Linked Devices → Link a Device
                 </p>
-                <p className="text-xs text-muted-foreground">QR refreshes automatically</p>
+                <p className="text-xs text-muted-foreground">
+                  Status and new messages will appear live after the device links.
+                </p>
               </div>
             </div>
           ) : (
@@ -304,7 +349,7 @@ export default function WhatsAppAdminPage() {
                 <p className="text-xs text-muted-foreground">
                   Run{" "}
                   <code className="rounded bg-muted px-1 py-0.5 text-xs">cd bot && bun dev</code>{" "}
-                  to start
+                  to start the WhatsApp bridge.
                 </p>
               </div>
             </div>
@@ -312,14 +357,14 @@ export default function WhatsAppAdminPage() {
         </div>
       )}
 
-      {/* Main Chat Panel */}
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border">
-        {/* Left Sidebar */}
-        <div className="flex w-72 shrink-0 flex-col border-r border-border">
-          {/* Tab Strip */}
+        <div className="flex min-h-0 w-80 shrink-0 flex-col overflow-hidden border-r border-border">
           <div className="flex shrink-0 border-b border-border">
             <button
-              onClick={() => { setLeftTab("chats"); setSearch(""); }}
+              onClick={() => {
+                setLeftTab("chats");
+                setSearch("");
+              }}
               className={cn(
                 "flex flex-1 items-center justify-center gap-1.5 py-3 text-xs font-medium transition-colors",
                 leftTab === "chats"
@@ -329,14 +374,15 @@ export default function WhatsAppAdminPage() {
             >
               <ChatCircle className="h-3.5 w-3.5" />
               Chats
-              {conversations.length > 0 && (
-                <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-                  {conversations.length}
-                </span>
-              )}
+              <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+                {threads.length}
+              </span>
             </button>
             <button
-              onClick={() => { setLeftTab("people"); setSearch(""); }}
+              onClick={() => {
+                setLeftTab("people");
+                setSearch("");
+              }}
               className={cn(
                 "flex flex-1 items-center justify-center gap-1.5 py-3 text-xs font-medium transition-colors",
                 leftTab === "people"
@@ -346,200 +392,198 @@ export default function WhatsAppAdminPage() {
             >
               <Users className="h-3.5 w-3.5" />
               Patients
-              {patients.length > 0 && (
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  {patients.length}
-                </span>
-              )}
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                {patients.length}
+              </span>
             </button>
           </div>
 
-          {/* Search */}
           <div className="shrink-0 p-3">
             <div className="relative">
               <MagnifyingGlass className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder={leftTab === "chats" ? "Search chats…" : "Search patients…"}
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(event) => setSearch(event.target.value)}
                 className="h-8 bg-accent pl-8 text-sm"
               />
             </div>
           </div>
 
-          {/* List */}
-          <ScrollArea className="flex-1">
+          <ScrollArea className="min-h-0 flex-1">
             {leftTab === "chats" ? (
-              filteredConversations.length === 0 ? (
+              loadingThreads ? (
+                <div className="flex flex-col items-center gap-2 py-12 text-center">
+                  <CircleDashed className="h-8 w-8 animate-spin text-muted-foreground/40" />
+                  <p className="text-xs text-muted-foreground">Loading conversations…</p>
+                </div>
+              ) : filteredThreads.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 py-12 text-center">
                   <ChatCircle className="h-8 w-8 text-muted-foreground/30" weight="duotone" />
                   <p className="text-xs text-muted-foreground">
-                    {status === "connected" ? "No conversations yet" : "Connect to see chats"}
+                    {status === "connected" ? "No conversations yet" : "Connect to load chats"}
                   </p>
                 </div>
               ) : (
                 <div className="divide-y divide-border">
-                  {filteredConversations.map((c) => (
-                    <button
-                      key={c.jid}
-                      onClick={() => setSelectedJid(c.jid)}
-                      className={cn(
-                        "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent",
-                        selectedJid === c.jid && "bg-accent"
-                      )}
-                    >
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                        {c.patient
-                          ? c.patient.full_name.charAt(0).toUpperCase()
-                          : c.phone.slice(-2)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate text-sm font-medium">
-                            {c.patient ? c.patient.full_name : `+${c.phone}`}
-                          </span>
-                          {c.lastMessage && (
-                            <span className="shrink-0 text-[10px] text-muted-foreground">
-                              {formatTime(c.lastMessage.timestamp)}
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-0.5 truncate text-xs text-foreground/60">
-                          {c.lastMessage ? (
-                            <>
-                              {c.lastMessage.direction === "out" && (
-                                <span className="mr-1 text-[#25D366]">You:</span>
-                              )}
-                              {c.lastMessage.text}
-                            </>
-                          ) : (
-                            <span className="italic text-muted-foreground/50">No messages yet</span>
-                          )}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )
-            ) : (
-              /* Patients tab */
-              filteredPatients.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 py-12 text-center">
-                  <Users className="h-8 w-8 text-muted-foreground/30" weight="duotone" />
-                  <p className="text-xs text-muted-foreground">No patients found</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {filteredPatients.map((p) => (
-                    <div key={p.id} className="flex items-center gap-3 px-4 py-3">
-                      <div
+                  {filteredThreads.map((thread) => {
+                    const displayName =
+                      thread.patient?.full_name ?? thread.pushName ?? `+${thread.phone}`;
+                    const initial = displayName.charAt(0).toUpperCase();
+                    const isActive = selectedPhone === thread.phone;
+
+                    return (
+                      <button
+                        key={thread.id}
+                        onClick={() => setSelectedPhone(thread.phone)}
                         className={cn(
-                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
-                          p.phone
-                            ? "bg-[#25D366]/10 text-[#25D366]"
-                            : "bg-muted text-muted-foreground"
+                          "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent",
+                          isActive && "bg-accent"
                         )}
                       >
-                        {p.full_name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{p.full_name}</p>
-                        {p.phone ? (
-                          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Phone className="h-3 w-3" />
-                            {p.phone}
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                          {initial}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="truncate text-sm font-medium">{displayName}</span>
+                              {thread.unmatched && (
+                                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                                  Unmatched
+                                </Badge>
+                              )}
+                            </div>
+                            <span className="shrink-0 text-[10px] text-muted-foreground">
+                              {formatSidebarTime(thread.lastMessageAt)}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 truncate text-xs text-foreground/60">
+                            {thread.lastMessagePreview ?? "No messages yet"}
                           </p>
-                        ) : (
-                          <p className="text-xs text-muted-foreground/40">No phone number</p>
-                        )}
-                      </div>
-                      {p.phone && (
-                        <Button
-                          size="sm"
-                          variant={
-                            selectedJid === phoneToJid(p.phone) ? "default" : "outline"
-                          }
-                          className="h-7 shrink-0 gap-1 px-2 text-xs"
-                          onClick={() => openChatForPatient(p)}
-                          disabled={status !== "connected"}
-                          title={
-                            status !== "connected"
-                              ? "Connect WhatsApp first"
-                              : `Chat with ${p.full_name}`
-                          }
-                        >
-                          <WhatsappLogo className="h-3.5 w-3.5" />
-                          Chat
-                        </Button>
-                      )}
-                    </div>
-                  ))}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )
+            ) : filteredPatients.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-12 text-center">
+                <Users className="h-8 w-8 text-muted-foreground/30" weight="duotone" />
+                <p className="text-xs text-muted-foreground">No patients found</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {filteredPatients.map((patient) => (
+                  <div key={patient.id} className="flex items-center gap-3 px-4 py-3">
+                    <div
+                      className={cn(
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
+                        patient.phone
+                          ? "bg-[#25D366]/10 text-[#25D366]"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {patient.full_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{patient.full_name}</p>
+                      {patient.phone ? (
+                        <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Phone className="h-3 w-3" />
+                          {patient.phone}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground/40">No phone number</p>
+                      )}
+                    </div>
+                    {patient.phone && (
+                      <Button
+                        size="sm"
+                        variant={
+                          selectedPhone === normalizePhone(patient.phone) ? "default" : "outline"
+                        }
+                        className="h-7 shrink-0 gap-1 px-2 text-xs"
+                        onClick={() => openChatForPatient(patient)}
+                        disabled={status !== "connected"}
+                        title={
+                          status !== "connected"
+                            ? "Connect WhatsApp first"
+                            : `Chat with ${patient.full_name}`
+                        }
+                      >
+                        <WhatsappLogo className="h-3.5 w-3.5" />
+                        Chat
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </ScrollArea>
         </div>
 
-        {/* Right: Chat Window */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          {selectedJid ? (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {selectedPhone ? (
             <>
-              {/* Chat Header */}
               <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                  {activeConversation?.patient
-                    ? activeConversation.patient.full_name.charAt(0).toUpperCase()
-                    : (activeConversation?.phone.slice(-2) ?? "?")}
+                  {(activeDisplayName ?? "?").charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">
-                    {activeConversation?.patient?.full_name ?? `+${activeConversation?.phone}`}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    +{jidToPhone(selectedJid)}
-                    {activeConversation?.patient && (
-                      <span className="ml-2 text-[#25D366]">· Saved patient</span>
+                  <p className="truncate text-sm font-semibold">{activeDisplayName}</p>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span>+{selectedPhone}</span>
+                    {activeThread?.patient && (
+                      <span className="text-[#25D366]">Saved patient</span>
                     )}
-                  </p>
+                    {activeThread?.unmatched && (
+                      <span className="text-amber-600">Needs patient match</span>
+                    )}
+                  </div>
                 </div>
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={fetchMessages}
+                  onClick={() => void refreshThreads(selectedPhone)}
                   className="h-7 w-7 p-0"
                 >
                   <ArrowClockwise className="h-3.5 w-3.5" />
                 </Button>
               </div>
 
-              {/* Messages */}
-              <ScrollArea className="flex-1 px-5 py-4">
-                {activeMessages.length === 0 ? (
+              <ScrollArea className="min-h-0 flex-1 px-5 py-4">
+                {loadingMessages ? (
                   <div className="flex h-full flex-col items-center justify-center gap-2 py-20 text-center">
-                    <ChatCircle className="h-10 w-10 text-muted-foreground/20" weight="duotone" />
-                    <p className="text-sm text-muted-foreground">No messages in log</p>
+                    <CircleDashed className="h-8 w-8 animate-spin text-muted-foreground/40" />
+                    <p className="text-sm text-muted-foreground">Loading messages…</p>
+                  </div>
+                ) : activeMessages.length === 0 ? (
+                  <div className="flex h-full flex-col items-center justify-center gap-2 py-20 text-center">
+                    <ChatCircle
+                      className="h-10 w-10 text-muted-foreground/20"
+                      weight="duotone"
+                    />
+                    <p className="text-sm text-muted-foreground">No messages in this thread yet</p>
                     <p className="text-xs text-muted-foreground/60">
-                      Type below to start the conversation
+                      Send a message below to start the conversation.
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-1.5">
-                    {activeMessages.map((msg, i) => {
+                    {activeMessages.map((message, index) => {
                       const showDate =
-                        i === 0 ||
-                        new Date(activeMessages[i - 1].timestamp).toDateString() !==
-                          new Date(msg.timestamp).toDateString();
+                        index === 0 ||
+                        new Date(activeMessages[index - 1].timestamp).toDateString() !==
+                          new Date(message.timestamp).toDateString();
+
                       return (
-                        <div key={i}>
+                        <div key={message.id}>
                           {showDate && (
                             <div className="my-3 flex items-center gap-3">
                               <div className="h-px flex-1 bg-border" />
                               <span className="text-[10px] text-muted-foreground">
-                                {new Date(msg.timestamp).toLocaleDateString([], {
-                                  weekday: "short",
-                                  month: "short",
-                                  day: "numeric",
-                                })}
+                                {formatMessageDate(message.timestamp)}
                               </span>
                               <div className="h-px flex-1 bg-border" />
                             </div>
@@ -547,29 +591,36 @@ export default function WhatsAppAdminPage() {
                           <div
                             className={cn(
                               "flex",
-                              msg.direction === "out" ? "justify-end" : "justify-start"
+                              message.direction === "out" ? "justify-end" : "justify-start"
                             )}
                           >
                             <div
                               className={cn(
                                 "max-w-[72%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm",
-                                msg.direction === "out"
-                                  ? "rounded-br-sm bg-[#25D366]/15 text-foreground"
+                                message.direction === "out"
+                                  ? message.senderType === "assistant"
+                                    ? "rounded-br-sm bg-[#25D366]/20 text-foreground"
+                                    : "rounded-br-sm bg-[#25D366]/12 text-foreground"
                                   : "rounded-bl-sm bg-accent text-foreground"
                               )}
                             >
+                              {message.direction === "out" && message.senderType === "assistant" && (
+                                <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.18em] text-[#25D366]">
+                                  Assistant
+                                </p>
+                              )}
                               <p className="whitespace-pre-wrap break-words leading-relaxed">
-                                {msg.text}
+                                {message.text}
                               </p>
                               <p
                                 className={cn(
                                   "mt-1 text-right text-[10px]",
-                                  msg.direction === "out"
+                                  message.direction === "out"
                                     ? "text-[#25D366]/70"
                                     : "text-muted-foreground/60"
                                 )}
                               >
-                                {new Date(msg.timestamp).toLocaleTimeString([], {
+                                {new Date(message.timestamp).toLocaleTimeString([], {
                                   hour: "2-digit",
                                   minute: "2-digit",
                                 })}
@@ -584,19 +635,20 @@ export default function WhatsAppAdminPage() {
                 )}
               </ScrollArea>
 
-              {/* Message Input */}
               <div className="shrink-0 border-t border-border p-3">
                 <form onSubmit={handleSend} className="flex gap-2">
                   <Input
                     placeholder={
-                      status === "connected" ? "Type a message… (Enter to send)" : "Bot disconnected"
+                      status === "connected"
+                        ? "Type a message… (Enter to send)"
+                        : "Bot disconnected"
                     }
                     value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSend();
+                    onChange={(event) => setInputText(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void handleSend();
                       }
                     }}
                     disabled={status !== "connected" || sending}
@@ -613,7 +665,6 @@ export default function WhatsAppAdminPage() {
               </div>
             </>
           ) : (
-            /* Empty state — no chat selected */
             <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#25D366]/10">
                 <WhatsappLogo className="h-8 w-8 text-[#25D366]" weight="duotone" />
@@ -621,14 +672,14 @@ export default function WhatsAppAdminPage() {
               <div className="space-y-1">
                 <p className="font-medium">Select a conversation</p>
                 <p className="max-w-xs text-sm text-muted-foreground">
-                  Pick a chat from the left, or go to the{" "}
+                  Choose any live thread on the left, or open the{" "}
                   <button
                     className="text-primary underline-offset-4 hover:underline"
                     onClick={() => setLeftTab("people")}
                   >
                     Patients
                   </button>{" "}
-                  tab to start a new one
+                  tab to start a new chat.
                 </p>
               </div>
             </div>

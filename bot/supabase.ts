@@ -5,7 +5,34 @@ export const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || ""
 );
 
-export async function findDoctorByName(name: string) {
+export interface DoctorRecord {
+  id: string;
+  specialization: string;
+  consultation_duration_mins: number;
+  profile:
+    | {
+        full_name: string;
+      }
+    | {
+        full_name: string;
+      }[]
+    | null;
+}
+
+interface PatientRecord {
+  id: string;
+}
+
+interface AppointmentSlotRow {
+  start_time: string;
+}
+
+interface BlockedWindowRow {
+  start_time: string | null;
+  end_time: string | null;
+}
+
+export async function findDoctorByName(name: string): Promise<DoctorRecord | null> {
   const { data } = await supabase
     .from("doctors")
     .select("*, profile:profiles(full_name)")
@@ -14,10 +41,17 @@ export async function findDoctorByName(name: string) {
   if (!data) return null;
 
   const lower = name.toLowerCase();
-  return data.find(
-    (d: any) =>
-      d.profile?.full_name?.toLowerCase().includes(lower) ||
-      d.specialization?.toLowerCase().includes(lower)
+  return (
+    (data as unknown as DoctorRecord[]).find((doctor) => {
+      const profileName = Array.isArray(doctor.profile)
+        ? doctor.profile[0]?.full_name
+        : doctor.profile?.full_name;
+
+      return (
+        profileName?.toLowerCase().includes(lower) ||
+        doctor.specialization?.toLowerCase().includes(lower)
+      );
+    }) ?? null
   );
 }
 
@@ -28,7 +62,7 @@ export async function findOrCreatePatientByPhone(phone: string) {
     .from("patients")
     .select("*")
     .eq("phone", normalized)
-    .single();
+    .single<PatientRecord>();
 
   if (existing) return existing;
 
@@ -70,9 +104,11 @@ export async function getAvailableSlots(doctorId: string, date: string) {
 
   const sessions = sessionsRes.data || [];
   const booked = new Set(
-    (appointmentsRes.data || []).map((a: any) => a.start_time.slice(0, 5))
+    ((appointmentsRes.data || []) as AppointmentSlotRow[]).map((appointment) =>
+      appointment.start_time.slice(0, 5)
+    )
   );
-  const blocked = blockedRes.data || [];
+  const blocked = (blockedRes.data || []) as BlockedWindowRow[];
 
   const slots: string[] = [];
   for (const s of sessions) {
@@ -85,9 +121,12 @@ export async function getAvailableSlots(doctorId: string, date: string) {
         .toString()
         .padStart(2, "0")}:${(cur % 60).toString().padStart(2, "0")}`;
       if (!booked.has(time)) {
-        const isBlocked = blocked.some((b: any) => {
-          if (!b.start_time || !b.end_time) return true;
-          return time >= b.start_time.slice(0, 5) && time < b.end_time.slice(0, 5);
+        const isBlocked = blocked.some((window) => {
+          if (!window.start_time || !window.end_time) return true;
+          return (
+            time >= window.start_time.slice(0, 5) &&
+            time < window.end_time.slice(0, 5)
+          );
         });
         if (!isBlocked) slots.push(time);
       }
@@ -134,11 +173,11 @@ export async function bookAppointment(
   return { data };
 }
 
-export async function getDoctorsList() {
+export async function getDoctorsList(): Promise<DoctorRecord[]> {
   const { data } = await supabase
     .from("doctors")
     .select("id, specialization, consultation_duration_mins, profile:profiles(full_name)")
     .eq("is_active", true);
 
-  return data || [];
+  return (data as unknown as DoctorRecord[]) || [];
 }

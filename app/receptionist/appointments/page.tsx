@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -29,7 +29,7 @@ import { formatTime } from "@/lib/scheduling";
 import { createClient } from "@/lib/supabase/client";
 import { CalendarPlus, FunnelSimple, List, CalendarBlank, CircleDashed, ArrowsClockwise, UserMinus, CheckCircle, SignOut as SignOutIcon } from "@phosphor-icons/react";
 import { toast } from "sonner";
-import type { Appointment, AppointmentStatus, Doctor } from "@/lib/types";
+import type { Appointment, Doctor } from "@/lib/types";
 
 type CalendarMode = "day" | "week" | "month";
 

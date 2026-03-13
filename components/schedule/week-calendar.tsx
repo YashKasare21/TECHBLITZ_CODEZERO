@@ -91,11 +91,27 @@ export function WeekCalendar({ fetchAppointments, mode = "week" }: WeekCalendarP
   const todayStr = dateToString(new Date());
 
   useEffect(() => {
-    setLoading(true);
-    fetchAppointments(startStr, endStr).then((data) => {
-      setAppointments(data);
-      setLoading(false);
-    });
+    let cancelled = false;
+
+    const loadAppointments = async () => {
+      setLoading(true);
+      try {
+        const data = await fetchAppointments(startStr, endStr);
+        if (!cancelled) {
+          setAppointments(data);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadAppointments();
+
+    return () => {
+      cancelled = true;
+    };
   }, [startStr, endStr, fetchAppointments]);
 
   function shiftWeek(dir: number) {
