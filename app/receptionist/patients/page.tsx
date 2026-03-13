@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/select";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import { UserPlus, MagnifyingGlass } from "@phosphor-icons/react";
+import { UserPlus, MagnifyingGlass, Users, CircleDashed } from "@phosphor-icons/react";
 import type { Patient } from "@/lib/types";
 
 export default function PatientsPage() {
@@ -100,14 +100,23 @@ export default function PatientsPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                    Loading...
+                  <TableCell colSpan={7} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <CircleDashed className="h-6 w-6 animate-spin" />
+                      <span className="text-sm">Loading patients…</span>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                    No patients found
+                  <TableCell colSpan={7} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <Users className="h-10 w-10 opacity-30" weight="duotone" />
+                      <p className="text-sm font-medium">No patients found</p>
+                      <p className="text-xs opacity-60">
+                        {search ? "Try a different search term" : "Add your first patient to get started"}
+                      </p>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (

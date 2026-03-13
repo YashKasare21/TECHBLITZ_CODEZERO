@@ -26,7 +26,7 @@ import { WeekCalendar } from "@/components/schedule/week-calendar";
 import { useRealtimeAppointments } from "@/hooks/use-realtime";
 import { formatTime } from "@/lib/scheduling";
 import { createClient } from "@/lib/supabase/client";
-import { CalendarPlus, FunnelSimple, List, CalendarBlank } from "@phosphor-icons/react";
+import { CalendarPlus, FunnelSimple, List, CalendarBlank, CircleDashed } from "@phosphor-icons/react";
 import type { Appointment, AppointmentStatus, Doctor } from "@/lib/types";
 
 export default function AppointmentsPage() {
@@ -170,14 +170,21 @@ export default function AppointmentsPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                    Loading...
+                  <TableCell colSpan={6} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <CircleDashed className="h-6 w-6 animate-spin" />
+                      <span className="text-sm">Loading appointments…</span>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : appointments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                    No appointments found
+                  <TableCell colSpan={6} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <CalendarBlank className="h-10 w-10 opacity-30" weight="duotone" />
+                      <p className="text-sm font-medium">No appointments found</p>
+                      <p className="text-xs opacity-60">Try adjusting your filters</p>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (

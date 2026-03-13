@@ -8,15 +8,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/appointments/status-badge";
 import { formatTime } from "@/lib/scheduling";
+import { cn } from "@/lib/utils";
 import {
   CheckCircle,
   SignOut as SignOutIcon,
   Clock,
   User,
   NoteBlank,
+  Queue,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
-import type { Appointment } from "@/lib/types";
+import type { Appointment, AppointmentStatus } from "@/lib/types";
 
 interface Props {
   appointments: Appointment[];
@@ -52,42 +54,24 @@ export function DoctorQueueClient({ appointments, doctorId, today }: Props) {
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-        <Card className="border-border shadow-sm">
-          <CardContent className="flex items-center gap-3 p-4">
-            <Clock className="h-5 w-5 text-primary" weight="duotone" />
-            <div>
-              <p className="text-xl font-semibold">{upcoming}</p>
-              <p className="text-xs text-muted-foreground">Upcoming</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border shadow-sm">
-          <CardContent className="flex items-center gap-3 p-4">
-            <User className="h-5 w-5 text-success" weight="duotone" />
-            <div>
-              <p className="text-xl font-semibold">{checkedIn}</p>
-              <p className="text-xs text-muted-foreground">Checked In</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border shadow-sm">
-          <CardContent className="flex items-center gap-3 p-4">
-            <CheckCircle className="h-5 w-5 text-muted-foreground" weight="duotone" />
-            <div>
-              <p className="text-xl font-semibold">{completed}</p>
-              <p className="text-xs text-muted-foreground">Completed</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border shadow-sm">
-          <CardContent className="flex items-center gap-3 p-4">
-            <NoteBlank className="h-5 w-5 text-secondary" weight="duotone" />
-            <div>
-              <p className="text-xl font-semibold">{totalToday}</p>
-              <p className="text-xs text-muted-foreground">Total</p>
-            </div>
-          </CardContent>
-        </Card>
+        {[
+          { label: "Upcoming", value: upcoming, icon: <Clock className="h-5 w-5" weight="duotone" />, iconClass: "text-primary bg-primary/10" },
+          { label: "In Room", value: checkedIn, icon: <User className="h-5 w-5" weight="duotone" />, iconClass: "text-success bg-success/15" },
+          { label: "Completed", value: completed, icon: <CheckCircle className="h-5 w-5" weight="duotone" />, iconClass: "text-muted-foreground bg-muted" },
+          { label: "Total", value: totalToday, icon: <NoteBlank className="h-5 w-5" weight="duotone" />, iconClass: "text-secondary bg-secondary/15" },
+        ].map((stat) => (
+          <Card key={stat.label} className="border-border shadow-sm">
+            <CardContent className="flex items-center gap-3 p-4">
+              <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", stat.iconClass)}>
+                {stat.icon}
+              </div>
+              <div>
+                <p className="text-xl font-semibold tabular-nums">{stat.value}</p>
+                <p className="text-xs text-muted-foreground">{stat.label}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* Queue */}
@@ -97,9 +81,11 @@ export function DoctorQueueClient({ appointments, doctorId, today }: Props) {
         </CardHeader>
         <CardContent className="space-y-3">
           {appointments.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No appointments for today
-            </p>
+            <div className="flex flex-col items-center gap-2 py-12 text-center">
+              <Queue className="h-10 w-10 text-muted-foreground/40" weight="duotone" />
+              <p className="text-sm font-medium text-muted-foreground">Your queue is empty</p>
+              <p className="text-xs text-muted-foreground/60">No appointments scheduled for today</p>
+            </div>
           ) : (
             appointments.map((apt) => (
               <QueueCard key={apt.id} appointment={apt} onUpdate={refresh} />
@@ -147,8 +133,23 @@ function QueueCard({
     }
   }
 
+  const statusBorder: Record<AppointmentStatus, string> = {
+    pending: "border-l-warning",
+    booked: "border-l-primary",
+    checked_in: "border-l-success",
+    checked_out: "border-l-border",
+    cancelled: "border-l-destructive",
+    no_show: "border-l-secondary",
+  };
+
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div
+      className={cn(
+        "rounded-lg border border-border bg-card p-4",
+        "border-l-[3px]",
+        statusBorder[appointment.status]
+      )}
+    >
       <div className="flex items-start gap-4">
         {/* Time column */}
         <div className="w-24 shrink-0 text-center">
