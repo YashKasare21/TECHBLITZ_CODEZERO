@@ -17,6 +17,7 @@ import {
   XCircle,
   CheckCircle,
   CalendarBlank,
+  UserMinus,
 } from "@phosphor-icons/react";
 import type { Appointment, AppointmentStatus } from "@/lib/types";
 
@@ -216,7 +217,7 @@ function AppointmentRow({
 
       {/* Actions */}
       <div className="flex gap-1.5">
-        {appointment.status === "booked" && (
+        {(appointment.status === "booked" || appointment.status === "pending") && (
           <Button
             size="sm"
             variant="outline"
@@ -235,6 +236,17 @@ function AppointmentRow({
             disabled={updating}
           >
             Check Out
+          </Button>
+        )}
+        {(appointment.status === "booked" || appointment.status === "pending") && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => updateStatus("no_show")}
+            disabled={updating}
+            title="No Show"
+          >
+            <UserMinus className="h-4 w-4" />
           </Button>
         )}
         {(appointment.status === "booked" || appointment.status === "pending") && (

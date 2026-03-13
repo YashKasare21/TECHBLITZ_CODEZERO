@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Stethoscope,
   CheckCircle,
   CalendarCheck,
   Users,
@@ -86,9 +86,7 @@ export function LoginForm() {
         <div className="relative z-10 flex h-full flex-col p-12">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
-              <Stethoscope className="h-5 w-5 text-white" weight="duotone" />
-            </div>
+            <Image src="/logo.webp" alt="ClinicOS" width={40} height={40} className="rounded-xl" />
             <span className="text-xl font-semibold text-white">ClinicOS</span>
           </div>
 
@@ -125,12 +123,7 @@ export function LoginForm() {
         <div className="w-full max-w-sm">
           {/* Mobile logo */}
           <div className="mb-8 flex flex-col items-center gap-3 lg:hidden">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
-              <Stethoscope
-                className="h-6 w-6 text-primary-foreground"
-                weight="duotone"
-              />
-            </div>
+            <Image src="/logo.webp" alt="ClinicOS" width={48} height={48} className="rounded-xl" />
             <span className="text-xl font-semibold">ClinicOS</span>
           </div>
 

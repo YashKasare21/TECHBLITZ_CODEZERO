@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  Stethoscope,
   CalendarDots,
   Users,
+  UsersThree,
   Queue,
   Clock,
   SignOut,
@@ -40,6 +41,11 @@ const receptionistNav: NavItem[] = [
     label: "Patients",
     href: "/receptionist/patients",
     icon: <Users className="h-5 w-5" weight="duotone" />,
+  },
+  {
+    label: "Users",
+    href: "/receptionist/users",
+    icon: <UsersThree className="h-5 w-5" weight="duotone" />,
   },
   {
     label: "WhatsApp",
@@ -96,9 +102,7 @@ export function AppShell({
       <aside className="flex w-[240px] shrink-0 flex-col border-r border-border bg-card">
         {/* Brand */}
         <div className="flex h-16 items-center gap-2.5 border-b border-border px-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <Stethoscope className="h-4 w-4 text-primary-foreground" weight="duotone" />
-          </div>
+          <Image src="/logo.webp" alt="ClinicOS" width={32} height={32} className="rounded-lg" />
           <span className="text-base font-semibold tracking-tight">ClinicOS</span>
         </div>
 

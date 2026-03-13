@@ -22,11 +22,12 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/appointments/status-badge";
 import { BookingDrawer } from "@/components/appointments/booking-drawer";
+import { RescheduleDialog } from "@/components/appointments/reschedule-dialog";
 import { WeekCalendar } from "@/components/schedule/week-calendar";
 import { useRealtimeAppointments } from "@/hooks/use-realtime";
 import { formatTime } from "@/lib/scheduling";
 import { createClient } from "@/lib/supabase/client";
-import { CalendarPlus, FunnelSimple, List, CalendarBlank, CircleDashed } from "@phosphor-icons/react";
+import { CalendarPlus, FunnelSimple, List, CalendarBlank, CircleDashed, ArrowsClockwise, UserMinus } from "@phosphor-icons/react";
 import type { Appointment, AppointmentStatus, Doctor } from "@/lib/types";
 
 export default function AppointmentsPage() {
@@ -34,6 +35,7 @@ export default function AppointmentsPage() {
   const [doctors, setDoctors] = useState<(Doctor & { profile: { full_name: string } })[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null);
 
   const [dateFilter, setDateFilter] = useState(
     new Date().toISOString().split("T")[0]
@@ -148,6 +150,7 @@ export default function AppointmentsPage() {
               <SelectItem value="checked_in">Checked In</SelectItem>
               <SelectItem value="checked_out">Checked Out</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
+              <SelectItem value="no_show">No Show</SelectItem>
             </SelectContent>
           </Select>
         </CardContent>
@@ -213,7 +216,7 @@ export default function AppointmentsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1.5">
-                          {apt.status === "booked" && (
+                          {(apt.status === "booked" || apt.status === "pending") && (
                             <Button size="sm" variant="outline" onClick={() => updateStatus(apt.id, "checked_in")}>
                               Check In
                             </Button>
@@ -221,6 +224,27 @@ export default function AppointmentsPage() {
                           {apt.status === "checked_in" && (
                             <Button size="sm" variant="outline" onClick={() => updateStatus(apt.id, "checked_out")}>
                               Check Out
+                            </Button>
+                          )}
+                          {(apt.status === "booked" || apt.status === "pending") && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setRescheduleTarget(apt)}
+                              className="gap-1"
+                            >
+                              <ArrowsClockwise className="h-3.5 w-3.5" />
+                              Reschedule
+                            </Button>
+                          )}
+                          {(apt.status === "booked" || apt.status === "pending") && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => updateStatus(apt.id, "no_show")}
+                              className="text-secondary-foreground"
+                            >
+                              <UserMinus className="h-4 w-4" />
                             </Button>
                           )}
                           {(apt.status === "booked" || apt.status === "pending") && (
@@ -248,6 +272,12 @@ export default function AppointmentsPage() {
       </Tabs>
 
       <BookingDrawer open={drawerOpen} onOpenChange={setDrawerOpen} onBooked={fetchAppointments} />
+      <RescheduleDialog
+        appointment={rescheduleTarget}
+        open={!!rescheduleTarget}
+        onOpenChange={(open) => { if (!open) setRescheduleTarget(null); }}
+        onRescheduled={fetchAppointments}
+      />
     </div>
   );
 }
