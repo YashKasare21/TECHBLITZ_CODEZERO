@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  DOCTOR
+  RECEPTIONIST
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+}
+
+model User {
+  id                        String              @id @default(cuid())
+  name                      String
+  email                     String              @unique
+  passwordHash              String
+  role                      Role
+  defaultConsultationMinutes Int                @default(15)
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+
+  appointments       Appointment[]
+  blockedSlots       BlockedSlot[]
+  schedules          DoctorSchedule[]
+  scheduleExceptions ScheduleException[]
+}
+
+model Patient {
+  id               String   @id @default(cuid())
+  name             String
+  phone            String   @unique
+  email            String?
+  notes            String?
+  telegramChatId   String?  @unique
+  telegramUsername String?
+  phoneVerified    Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  appointments   Appointment[]
+  otps           TelegramOTP[]
+  conversations  Conversation[]
+}
+
+model TelegramOTP {
+  id        String   @id @default(cuid())
+  patientId String
+  otpCode   String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([otpCode, expiresAt])
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  patientId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient  Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([patientId])
+  @@index([updatedAt])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  role          String
+  content       String
+  toolCalls     Json?
+  toolResults   Json?
+  createdAt     DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+model Appointment {
+  id               String            @id @default(cuid())
+  patientId        String
+  doctorId         String
+  startTime        DateTime
+  endTime          DateTime
+  status           AppointmentStatus @default(SCHEDULED)
+  notes            String?
+  rescheduledFrom  String?
+  rescheduleReason String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id])
+  doctor  User    @relation(fields: [doctorId], references: [id])
+
+  @@index([doctorId, startTime, endTime])
+  @@index([patientId])
+}
+
+model BlockedSlot {
+  id        String   @id @default(cuid())
+  doctorId  String
+  startTime DateTime
+  endTime   DateTime
+  reason    String?
+  createdAt DateTime @default(now())
+
+  doctor User @relation(fields: [doctorId], references: [id])
+
+  @@index([doctorId, startTime, endTime])
+}
+
+model DoctorSchedule {
+  id        String @id @default(cuid())
+  doctorId  String
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  doctor User @relation(fields: [doctorId], references: [id])
+
+  @@unique([doctorId, dayOfWeek, startTime])
+  @@index([doctorId])
+}
+
+model ScheduleException {
+  id        String   @id @default(cuid())
+  doctorId  String
+  date      DateTime @db.Date
+  startTime String?
+  endTime   String?
+  reason    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  doctor User @relation(fields: [doctorId], references: [id])
+
+  @@unique([doctorId, date, startTime])
+  @@index([doctorId, date])
+}
