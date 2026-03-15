@@ -32,21 +32,39 @@ const SYSTEM_PROMPT = `You are a helpful medical clinic assistant bot for patien
 - When showing dates, use a friendly format like "Monday, January 15"
 - If a patient asks about their appointments, you already have their patientId in context
 
+## CRITICAL: Using IDs Correctly
+
+When you call getDoctors, it returns doctor objects with an "id" field. You MUST use this EXACT id value in subsequent tool calls.
+- NEVER guess or make up doctor IDs like "1", "doc123", "sarah_johnson", etc.
+- ALWAYS copy the exact "id" string returned by getDoctors
+- Example: If getDoctors returns { "id": "cmmqi4xds0000afckf6dzy9cs", "name": "Dr. Sarah Johnson" }, use "cmmqi4xds0000afckf6dzy9cs" as the doctorId
+
+## Memory & Context:
+
+- You have access to the last 20 messages of conversation history
+- If the user references something from earlier that you don't recall, ask them to remind you
+- Use getCurrentDate to understand what "today", "tomorrow", or "next week" means
+
 ## Available Actions:
 
-1. **getDoctors** - List all doctors in the clinic
-2. **getAvailableSlots** - Get available appointment slots for a doctor on a specific date
-3. **bookAppointment** - Book an appointment for the patient
-4. **getMyAppointments** - Show the patient's upcoming appointments
-5. **cancelAppointment** - Cancel an existing appointment
-6. **rescheduleAppointment** - Reschedule an appointment to a new time
-7. **completeInteraction** - Call this when you have fully addressed the patient's request
+1. **getCurrentDate** - Get the current date and time (use this to understand relative dates)
+2. **getDoctors** - List all doctors in the clinic (returns their exact IDs - USE THESE!)
+3. **getDoctorAvailability** - Get a doctor's working schedule for the next N days (useful for quick availability overview)
+4. **getAvailableSlots** - Get available appointment slots for a doctor on a specific date
+5. **bookAppointment** - Book an appointment for the patient
+6. **getMyAppointments** - Show the patient's upcoming appointments
+7. **cancelAppointment** - Cancel an existing appointment
+8. **rescheduleAppointment** - Reschedule an appointment to a new time
+9. **completeInteraction** - Call this when you have fully addressed the patient's request
 
 ## Workflow:
 
-1. When booking: First call getDoctors to show options, then getAvailableSlots for the chosen doctor/date, then bookAppointment after confirming with patient
-2. Always confirm before making changes (booking, cancelling, rescheduling)
-3. When the patient's request is complete, call completeInteraction to signal you're done
+1. First call getCurrentDate to know what today's date is
+2. When booking: Call getDoctors first, then use the EXACT doctorId returned to check availability
+3. Use getDoctorAvailability for a quick overview of the next few days
+4. Use getAvailableSlots for specific date slot checking
+5. Always confirm before making changes (booking, cancelling, rescheduling)
+6. When the patient's request is complete, call completeInteraction to signal you're done
 
 ## Response Style:
 
@@ -91,7 +109,7 @@ const createAgent = (contextPrompt: string) => {
     instructions: SYSTEM_PROMPT + contextPrompt,
     tools: botTools,
     stopWhen: [
-      stepCountIs(10),
+      stepCountIs(20),
       hasToolCall('completeInteraction'),
     ],
   });
@@ -131,6 +149,27 @@ export const getConversationHistory = async (conversationId: string, limit: numb
     role: m.role as 'user' | 'assistant',
     content: m.content,
   }));
+};
+
+export const clearConversationHistory = async (patientId: string): Promise<{ success: boolean; deletedMessages: number; deletedConversations: number }> => {
+  const conversations = await prisma.conversation.findMany({
+    where: { patientId },
+    select: { id: true },
+  });
+
+  let deletedMessages = 0;
+  for (const conv of conversations) {
+    const result = await prisma.message.deleteMany({ where: { conversationId: conv.id } });
+    deletedMessages += result.count;
+  }
+
+  const deleteConvResult = await prisma.conversation.deleteMany({ where: { patientId } });
+
+  return {
+    success: true,
+    deletedMessages,
+    deletedConversations: deleteConvResult.count,
+  };
 };
 
 export const saveMessage = async (

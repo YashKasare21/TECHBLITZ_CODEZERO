@@ -1,6 +1,6 @@
 import { Bot, session, Context, SessionFlavor, MiddlewareFn } from 'grammy';
 import { prisma } from '../lib/prisma';
-import { processPatientMessage, sendNotification } from '../services/llm.service';
+import { processPatientMessage, sendNotification, clearConversationHistory } from '../services/llm.service';
 
 interface SessionData {
   patientId: string | null;
@@ -91,7 +91,8 @@ function setupBot(bot: Bot<MyContext>) {
       `/appointments - View your upcoming appointments\n` +
       `/book - Book a new appointment\n` +
       `/cancel - Cancel an appointment\n` +
-      `/reschedule - Reschedule an appointment\n\n` +
+      `/reschedule - Reschedule an appointment\n` +
+      `/clearhist - Clear your chat history (for testing)\n\n` +
       `💬 **Chat with me:**\n` +
       `You can also just type your question naturally.`
     );
@@ -167,6 +168,21 @@ function setupBot(bot: Bot<MyContext>) {
     );
 
     await ctx.reply(response);
+  });
+
+  bot.command('clearhist', async (ctx) => {
+    if (!ctx.session.isVerified || !ctx.session.patientId) {
+      await ctx.reply('Please verify your account first using /start');
+      return;
+    }
+
+    const result = await clearConversationHistory(ctx.session.patientId);
+
+    await ctx.reply(
+      `✅ Chat history cleared!\n\n` +
+      `Deleted ${result.deletedMessages} messages from ${result.deletedConversations} conversation(s).\n\n` +
+      `Starting fresh now. How can I help you?`
+    );
   });
 
   bot.on('message:text', async (ctx) => {

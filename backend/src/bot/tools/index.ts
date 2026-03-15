@@ -2,6 +2,35 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
 
+export const getCurrentDateTool = tool({
+  description: 'Get the current date and time. Use this to understand what "today" or "tomorrow" means when the user uses relative date terms.',
+  inputSchema: z.object({}),
+  execute: async () => {
+    const now = new Date();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const day = now.getDate();
+    const dayOfWeek = now.getDay();
+    
+    const localDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const localTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    
+    return {
+      date: localDate,
+      time: localTime,
+      dayOfWeek,
+      dayName: dayNames[dayOfWeek],
+      monthName: monthNames[month],
+      year,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      friendlyDate: `${dayNames[dayOfWeek]}, ${monthNames[month]} ${day}`,
+    };
+  },
+});
+
 export const getDoctorsTool = tool({
   description: 'Get a list of all available doctors in the clinic',
   inputSchema: z.object({}),
@@ -45,6 +74,67 @@ export const getDoctorScheduleTool = tool({
             reason: exception.reason,
           }
         : null,
+    };
+  },
+});
+
+export const getDoctorAvailabilityTool = tool({
+  description: "Get a doctor's working schedule overview for the next N days. Use this to quickly see which days the doctor is available before checking specific slots. Returns general working hours, not specific appointment slots.",
+  inputSchema: z.object({
+    doctorId: z.string().describe("The doctor's ID (MUST use the exact ID returned by getDoctors)"),
+    days: z.number().optional().describe('Number of days to check (default: 5, max: 14)'),
+  }),
+  execute: async (input) => {
+    const { doctorId, days = 5 } = input;
+    const maxDays = Math.min(days, 14);
+
+    const doctor = await prisma.user.findUnique({
+      where: { id: doctorId },
+      select: { name: true },
+    });
+
+    if (!doctor) {
+      return { error: 'Doctor not found. Make sure you are using the exact doctorId from getDoctors.' };
+    }
+
+    const schedules = await prisma.doctorSchedule.findMany({
+      where: { doctorId, isActive: true },
+      orderBy: { dayOfWeek: 'asc' },
+    });
+
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const availability = [];
+
+    for (let i = 0; i < maxDays; i++) {
+      const date = new Date();
+      date.setDate(date.getDate() + i);
+      const dow = date.getDay();
+
+      const daySchedule = schedules.filter((s) => s.dayOfWeek === dow);
+      const exception = await prisma.scheduleException.findFirst({
+        where: { doctorId, date },
+      });
+
+      const isDayOff = exception && !exception.startTime;
+      const workingHours = isDayOff
+        ? []
+        : daySchedule.map((s) => `${s.startTime}-${s.endTime}`);
+
+      availability.push({
+        date: date.toISOString().split('T')[0],
+        dayName: dayNames[dow],
+        isWorking: workingHours.length > 0,
+        workingHours,
+        hasException: !!exception,
+        exceptionReason: exception?.reason,
+      });
+    }
+
+    return {
+      doctorName: doctor.name,
+      doctorId,
+      daysChecked: maxDays,
+      availability,
     };
   },
 });
@@ -526,8 +616,10 @@ export const completeInteractionTool = tool({
 });
 
 export const botTools = {
+  getCurrentDate: getCurrentDateTool,
   getDoctors: getDoctorsTool,
   getDoctorSchedule: getDoctorScheduleTool,
+  getDoctorAvailability: getDoctorAvailabilityTool,
   getAvailableSlots: getAvailableSlotsTool,
   bookAppointment: bookAppointmentTool,
   getMyAppointments: getMyAppointmentsTool,
